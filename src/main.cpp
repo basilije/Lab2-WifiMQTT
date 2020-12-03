@@ -28,9 +28,8 @@ const char MQTT_PRESSURE_TOPIC[] = "vasske@gmail.com/Pressure";
 const char MQTT_ALCOHOL_TOPIC[] = "vasske@gmail.com/AlcoholContent";
 const char MQTT_BROKER_USERNAME[] = "vasske@gmail.com";
 const char MQTT_BROKER_PASSWORD[] = "emkjutitiPASS";
-unsigned int local_port = 8888;      // local port to listen on
+unsigned int local_port = 8888;
 int serial_read, incoming_byte, num_ssid, key_index = 0, current_mode_of_operation = OPERATION_TYPE_NORMAL;  // network key Index number
-float temp, pres, alco;
 char ch_temp[16], ch_pres[16], ch_alco[16];
 WiFiUDP Udp;
 IPAddress remote_ip;
@@ -40,7 +39,7 @@ WhiskeyBug wb;
 WiFiClient espClient;
 PubSubClient client(espClient);
 time_t seconds = time(NULL);
-// make some pointers to fixed values
+// make some pointers to fixed const chars
 const char* P_UDP_MESSAGE = UDP_MESSAGE;
 const char* P_MQTT_BROKER_SERVER = MQTT_BROKER_SERVER;
 const char* P_MQTT_BROKER_CLIENT_ID = MQTT_BROKER_CLIENT_ID;
@@ -182,7 +181,7 @@ void setup() {
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); //disable brownout detector
   Serial.begin(115200,  SERIAL_8N1); // initialize the serial port
   printMainMenu();
-  wb=WhiskeyBug();
+  wb = WhiskeyBug();
 }
 
 void loop() {
@@ -202,13 +201,10 @@ void loop() {
               changeModeToNormal();
             }      
         }
-        // Read the sensors from the whiskey bug
-        temp = wb.getTemp();
-        pres = wb.getPressure();
-        alco = wb.getAlcoholContent();
-        sprintf(ch_temp, "%f", temp);
-        sprintf(ch_pres, "%f", pres);
-        sprintf(ch_alco, "%f", alco);
+        // Read the sensors from the whiskey bug, convert it to char[] and send it
+        sprintf(ch_temp, "%f", wb.getTemp());
+        sprintf(ch_pres, "%f", wb.getPressure());
+        sprintf(ch_alco, "%f", wb.getAlcoholContent());
         myMQTT(P_MQTT_TEMPERATURE_TOPIC, ch_temp);
         myMQTT(P_MQTT_PRESSURE_TOPIC, ch_pres);
         myMQTT(P_MQTT_ALCOHOL_TOPIC, ch_alco);
