@@ -1,3 +1,13 @@
+/***********************************************************************************
+* Project: Lab2 - Exercise #3 - Wifi and MQTT
+* Class: CIT324 - Networking for IoT
+* Author: Vasilije Mehandzic
+*
+* File: main.cpp
+* Description: Main file for Exercise #3
+* Date: 12/3/2020
+**********************************************************************************/
+
 #include <Arduino.h>
 #include <SPI.h>
 #include <WiFi.h>
@@ -6,17 +16,18 @@
 #include "wifi-utils.h"
 #include "string-utils.h"
 #include "whiskey-bug.h"
-
-// for disable brownout detector https://github.com/espressif/arduino-esp32/issues/863
+// next two includes are for disabling brownout detector https://github.com/espressif/arduino-esp32/issues/863
 #include "soc/soc.h"
 #include "soc/rtc_cntl_reg.h"
 
+// operation modes enum
 enum operation_type { 
     OPERATION_TYPE_NORMAL,
     OPERATION_TYPE_UDP_BROADCAST,
     OPERATION_TYPE_MQTT_MODE,
 };
 
+// the global variable needed
 const unsigned int UDP_PORT = 8888;
 const unsigned int UDP_PACKET_SIZE = 64;
 const char UDP_MESSAGE[] = "^^^^^^<| DoN'T MoVE DoN'T SToP {<waka waka waka waka>} |>^^^^^^";
@@ -29,13 +40,13 @@ const char MQTT_ALCOHOL_TOPIC[] = "vasske@gmail.com/AlcoholContent";
 const char MQTT_BROKER_USERNAME[] = "vasske@gmail.com";
 const char MQTT_BROKER_PASSWORD[] = "emkjutitiPASS";
 unsigned int local_port = 8888;
-int serial_read, incoming_byte, num_ssid, key_index = 0, current_mode_of_operation = OPERATION_TYPE_NORMAL;  // network key Index number
+int serial_read, incoming_byte, num_ssid, key_index = 0, current_mode_of_operation = OPERATION_TYPE_NORMAL;
 char ch_temp[16], ch_pres[16], ch_alco[16];
 WiFiUDP Udp;
 IPAddress remote_ip;
 byte mac[6];
-wl_status_t status = WL_IDLE_STATUS;  // the Wifi radio's status
-WhiskeyBug wb;
+wl_status_t status = WL_IDLE_STATUS; 
+WhiskeyBug whiskey_bug;
 WiFiClient espClient;
 PubSubClient client(espClient);
 time_t seconds = time(NULL);
@@ -47,10 +58,10 @@ const char* P_MQTT_TEMPERATURE_TOPIC = MQTT_TEMPERATURE_TOPIC;
 const char* P_MQTT_PRESSURE_TOPIC = MQTT_PRESSURE_TOPIC;
 const char* P_MQTT_ALCOHOL_TOPIC = MQTT_ALCOHOL_TOPIC;
 
-void giveMeTwo() {
-  delay(2000);  // 2 seconds break
-}
-
+/***********************************************************************************
+* Purpose: Print the main menu content.
+* No arguments, no returns
+**********************************************************************************/
 void printMainMenu() {  
   Serial.print("A – Display MAC address\nL - List available wifi networks\nC – Connect to a wifi network\nD – Disconnect from the network\nI – Display connection info\nM – Display the menu options\nV - change the current mode to: ");
   if (current_mode_of_operation == OPERATION_TYPE_NORMAL)
@@ -60,11 +71,19 @@ void printMainMenu() {
   Serial.print("Q - change the current mode to MQTT mode\n");    
   }
 
+/***********************************************************************************
+* Purpose: Print on the serial port the mac address in use.
+* No arguments, no returns 
+**********************************************************************************/
 void printMacAddresses() {  
     WiFi.macAddress(mac);  // get your MAC address
     Serial.println(macAddressToString(mac));  // and print  your MAC address
 }
 
+/***********************************************************************************
+* Purpose: Scan and detailed serial port print of the Network APs found
+* No arguments, no returns
+**********************************************************************************/
 void networkList() {
   num_ssid = WiFi.scanNetworks(); 
   if (num_ssid > -1) {
@@ -77,27 +96,38 @@ void networkList() {
     Serial.println("Couldn't get a wifi connection!");
 }
 
+/***********************************************************************************
+* Purpose: Connect to the chosen network from the list 
+* No arguments, no returns
+**********************************************************************************/
 void connect() {  
-  int net_position_in_array = std::atoi(serialPrompt("\nChoose Network: ", 3).c_str()) - 1;
-  String ssid = WiFi.SSID(net_position_in_array);
-  String network_password = serialPrompt("Password: ", 32);
+  String ssid = WiFi.SSID(net_position_in_array = std::atoi(serialPrompt("\nChoose Network: ", 3).c_str()) - 1);
+  String network_password = serialPrompt("Password: ", 42);  // that's it
   const char* cch_ssid = ssid.c_str();
   const char* cch_net_pss = network_password.c_str();
   Serial.print("Connecting to "); Serial.print(cch_ssid); Serial.print("...\n\n");
   WiFi.begin(cch_ssid, cch_net_pss);
-  giveMeTwo();
+  delay(2000);
   Serial.println(wifiStatusToString(WiFi.status()).c_str()); 
 }
 
+/***********************************************************************************
+* Purpose: Disconnect WiFi and print the current status
+* No arguments, no returns
+**********************************************************************************/
 void disconnect() {
   Serial.print("Disonnecting... ");
   WiFi.disconnect();
-  giveMeTwo();
+  delay(2000);
   status = WiFi.status();
   Serial.print("Current status: ");
   Serial.println(wifiStatusToString(status).c_str());   
 }
 
+/***********************************************************************************
+* Purpose: Print the connection info
+* No arguments, no returns
+**********************************************************************************/
 void connectionInfo() {
   Serial.print("Status:\t\t");  Serial.println(wifiStatusToString(WiFi.status()).c_str());
   Serial.print("Network:\t");  Serial.println(WiFi.SSID());
@@ -106,16 +136,28 @@ void connectionInfo() {
   Serial.print("Gateway:\t");  Serial.println(WiFi.gatewayIP());
 } 
 
+/***********************************************************************************
+* Purpose: Change the operation mode to normal
+* No arguments, no returns 
+**********************************************************************************/
 void changeModeToNormal() {
   current_mode_of_operation = OPERATION_TYPE_NORMAL;
   Serial.println("Mode changed to NORMAL");
 }
 
+/***********************************************************************************
+* Purpose: Change the operation mode to udp broadcast
+* No arguments, no returns
+**********************************************************************************/
 void changeModeToUDP() {
   current_mode_of_operation = OPERATION_TYPE_UDP_BROADCAST;
   Serial.println("Mode changed to UDP_BROADCAST\nESC - change the current mode to NORMAL");
 }
 
+/***********************************************************************************
+* Purpose: Switch between two main operation modes
+* No arguments, no returns 
+**********************************************************************************/
 void changeMode() {
   if (current_mode_of_operation == OPERATION_TYPE_NORMAL)
     changeModeToUDP();
@@ -123,11 +165,19 @@ void changeMode() {
     changeModeToNormal();
 }
 
-void changeModeToMqtt() {
+/***********************************************************************************
+* Purpose: Change the operation mode to mqtt
+* No arguments, no returns 
+**********************************************************************************/
+void changeModeToMQTT() {
   current_mode_of_operation = OPERATION_TYPE_MQTT_MODE;
   Serial.print("\nMQTT MODE\npress X to eXit\n");
 }
 
+/***********************************************************************************
+* Purpose: Send earlies specified UDP packet with possible loop break with ESC key
+* No arguments, no returns
+**********************************************************************************/
 void sendUDP()
 {
   if (WiFi.status() != WL_CONNECTED) {
@@ -136,8 +186,7 @@ void sendUDP()
   }
   else {
     remote_ip = WiFi.gatewayIP();
-    remote_ip[3] = 255;
-    seconds = time(NULL);
+    remote_ip[3] = 255;    
 
     // exit from loop every 10 seconds
     while (time(NULL) - seconds < 10 && current_mode_of_operation == OPERATION_TYPE_UDP_BROADCAST) {
@@ -155,35 +204,48 @@ void sendUDP()
       Udp.write(P_UDP_MESSAGE[i]);
 
     Udp.endPacket();
-    Udp.stop();    
+    Udp.stop(); 
+    seconds = time(NULL);   
   }
 }
 
+/***********************************************************************************
+* Purpose: Send the payload to topic
+* Arguments: topic - ; payload
+* No returns
+**********************************************************************************/
 void myMQTT(const char* topic, const char* payload) {
   client.setServer(P_MQTT_BROKER_SERVER, MQTT_BROKER_PORT);
 
   if (client.connect(P_MQTT_BROKER_CLIENT_ID, MQTT_BROKER_USERNAME, MQTT_BROKER_PASSWORD)) {
-      if (client.publish(topic, payload)) {
-      }
+      if (client.publish(topic, payload)) {}
       else {
         Serial.print("ERROR: publishing failed with state ");
         Serial.print(client.state());
-        giveMeTwo();
+        delay(2000);
       }
   } else {
     Serial.print("ERROR: connect failed with state ");
     Serial.print(client.state());
-    giveMeTwo();
+    delay(2000);
   }
 }
 
+/***********************************************************************************
+* Purpose: Setup the port, detector and connect to the WhiskeyBug
+* No arguments, no returns
+**********************************************************************************/
 void setup() {
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); //disable brownout detector
   Serial.begin(115200,  SERIAL_8N1); // initialize the serial port
   printMainMenu();
-  wb = WhiskeyBug();
+  whiskey_bug = WhiskeyBug();
 }
 
+/***********************************************************************************
+* Purpose: The main loop
+* No arguments, no returns
+**********************************************************************************/
 void loop() {
   Serial.println("–––––––––––––––––––––––––––––––––––––––––");
   delay(1000); 
@@ -202,9 +264,9 @@ void loop() {
             }      
         }
         // Read the sensors from the whiskey bug, convert it to char[] and send it
-        sprintf(ch_temp, "%f", wb.getTemp());
-        sprintf(ch_pres, "%f", wb.getPressure());
-        sprintf(ch_alco, "%f", wb.getAlcoholContent());
+        sprintf(ch_temp, "%f", whiskey_bug.getTemp());
+        sprintf(ch_pres, "%f", whiskey_bug.getPressure());
+        sprintf(ch_alco, "%f", whiskey_bug.getAlcoholContent());
         myMQTT(P_MQTT_TEMPERATURE_TOPIC, ch_temp);
         myMQTT(P_MQTT_PRESSURE_TOPIC, ch_pres);
         myMQTT(P_MQTT_ALCOHOL_TOPIC, ch_alco);
@@ -259,8 +321,10 @@ void loop() {
           break;
 
         case 81:  // "Q"=81; "q"=113
-          changeModeToMqtt();
+          changeModeToMQTT();
           break;
-      } 
+      }
+      
+      break; 
   }
 }
