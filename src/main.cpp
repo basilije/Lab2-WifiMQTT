@@ -63,7 +63,7 @@ const char* P_MQTT_ALCOHOL_TOPIC = MQTT_ALCOHOL_TOPIC;
 * No arguments, no returns
 **********************************************************************************/
 void printMainMenu() {  
-  Serial.print("A – Display MAC address\nL - List available wifi networks\nC – Connect to a wifi network\nD – Disconnect from the network\nI – Display connection info\nM – Display the menu options\nV - change the current mode to: ");
+  Serial.print("A – Display MAC address\nL - List available wifi networks\nC – Connect to a wifi network\nD – Disconnect from the network\nI – Display connection info\nM – Display the menu options\nV - change the current mode to ");
   if (current_mode_of_operation == OPERATION_TYPE_NORMAL)
     Serial.print("UDP_BROADCAST\n");
   else
@@ -101,7 +101,7 @@ void networkList() {
 * No arguments, no returns
 **********************************************************************************/
 void connect() {  
-  String ssid = WiFi.SSID(net_position_in_array = std::atoi(serialPrompt("\nChoose Network: ", 3).c_str()) - 1);
+  String ssid = WiFi.SSID(std::atoi(serialPrompt("\nChoose Network: ", 3).c_str()) - 1);
   String network_password = serialPrompt("Password: ", 42);  // that's it
   const char* cch_ssid = ssid.c_str();
   const char* cch_net_pss = network_password.c_str();
@@ -142,7 +142,7 @@ void connectionInfo() {
 **********************************************************************************/
 void changeModeToNormal() {
   current_mode_of_operation = OPERATION_TYPE_NORMAL;
-  Serial.println("Mode changed to NORMAL");
+  Serial.println("NORMAL MODE");
 }
 
 /***********************************************************************************
@@ -151,7 +151,7 @@ void changeModeToNormal() {
 **********************************************************************************/
 void changeModeToUDP() {
   current_mode_of_operation = OPERATION_TYPE_UDP_BROADCAST;
-  Serial.println("Mode changed to UDP_BROADCAST\nESC - change the current mode to NORMAL");
+  Serial.println("UDP_BROADCAST MODE\nESC - change the mode to NORMAL");
 }
 
 /***********************************************************************************
@@ -171,31 +171,49 @@ void changeMode() {
 **********************************************************************************/
 void changeModeToMQTT() {
   current_mode_of_operation = OPERATION_TYPE_MQTT_MODE;
-  Serial.print("\nMQTT MODE\npress X to eXit\n");
+  Serial.print("\nMQTT MODE\nX - change the mode to NORMAL\n");
+}
+
+/***********************************************************************************
+* Purpose: Check if the key "x" is pressed
+* No arguments, no returns, affects some globals
+**********************************************************************************/
+void checkForXPressed() {
+  if (Serial.available() > 0)
+    serial_read = Serial.read();
+  if ((serial_read == 88)||(serial_read == 120))  //  if X or x is pressed
+    changeModeToNormal();
+}
+
+/***********************************************************************************
+* Purpose: Check if the key "Esc" is pressed
+* No arguments, no returns, affects some globals
+**********************************************************************************/
+void checkForESCPressed() {
+  if (Serial.available() > 0)
+      serial_read = Serial.read();
+  if (serial_read == 27)
+    changeModeToNormal();
 }
 
 /***********************************************************************************
 * Purpose: Send earlies specified UDP packet with possible loop break with ESC key
 * No arguments, no returns
 **********************************************************************************/
-void sendUDP()
-{
+void sendUDP() {
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("\nYou need to connect first! Switching back to the normal mode.\n");
-    current_mode_of_operation = OPERATION_TYPE_NORMAL;
+    changeModeToNormal();
   }
   else {
     remote_ip = WiFi.gatewayIP();
     remote_ip[3] = 255;    
+    checkForESCPressed();
 
     // exit from loop every 10 seconds
-    while (time(NULL) - seconds < 10 && current_mode_of_operation == OPERATION_TYPE_UDP_BROADCAST) {
-      if (Serial.available() > 0) {
-        serial_read = Serial.read();
-        if (serial_read == 27)
-          changeModeToNormal();
-        }      
-    }
+    while (time(NULL) - seconds < 10 && current_mode_of_operation == OPERATION_TYPE_UDP_BROADCAST)
+      checkForESCPressed();      
+
     // and finally send it
     Udp.begin(local_port);
     Udp.beginPacket(remote_ip, local_port);
@@ -231,6 +249,7 @@ void myMQTT(const char* topic, const char* payload) {
   }
 }
 
+
 /***********************************************************************************
 * Purpose: Setup the port, detector and connect to the WhiskeyBug
 * No arguments, no returns
@@ -253,15 +272,11 @@ void loop() {
   switch (current_mode_of_operation)
   {
     case OPERATION_TYPE_MQTT_MODE:
-      if (WiFi.status() == WL_CONNECTED) {        
-        seconds = time(NULL);
-        // exit from loop every second
-        while (time(NULL) - seconds < 1) {
-          if (Serial.available() > 0) {
-            serial_read = Serial.read();
-            if ((serial_read == 88)||(serial_read == 120))  //  if X or x is pressed
-              changeModeToNormal();
-            }      
+      if (WiFi.status() == WL_CONNECTED) {       
+        checkForXPressed();  
+        // exit from loopmore than every second after previous
+        while (time(NULL) - seconds < 1 && current_mode_of_operation == OPERATION_TYPE_MQTT_MODE) {
+          checkForXPressed();
         }
         // Read the sensors from the whiskey bug, convert it to char[] and send it
         sprintf(ch_temp, "%f", whiskey_bug.getTemp());
@@ -270,12 +285,14 @@ void loop() {
         myMQTT(P_MQTT_TEMPERATURE_TOPIC, ch_temp);
         myMQTT(P_MQTT_PRESSURE_TOPIC, ch_pres);
         myMQTT(P_MQTT_ALCOHOL_TOPIC, ch_alco);
+        seconds = time(NULL);
       }
       else
       {
         Serial.println("\nYou need to connect first! Will not try mqtt operations. Switching back to normal mode.\n");
-        current_mode_of_operation = OPERATION_TYPE_NORMAL;        
+        changeModeToNormal();        
       }
+      
       break;
 
     case OPERATION_TYPE_UDP_BROADCAST: 
